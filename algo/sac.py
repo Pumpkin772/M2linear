@@ -1,9 +1,9 @@
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from copy import deepcopy
+
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -26,31 +26,33 @@ class SAC():
         # print('Soft Q Network (1,2): ', self.soft_q_net1)
         # print('Policy Network: ', self.policy_net)
 
+        # 目标网络参数初始化
         for target_param, param in zip(self.target_soft_q_net1.parameters(), self.soft_q_net1.parameters()):
             target_param.data.copy_(param.data)
         for target_param, param in zip(self.target_soft_q_net2.parameters(), self.soft_q_net2.parameters()):
             target_param.data.copy_(param.data)
-
+        # 定义了两个均方误差损失函数，分别用于两个Q网络
         self.soft_q_criterion1 = nn.MSELoss()
         self.soft_q_criterion2 = nn.MSELoss()
 
         soft_q_lr = 3e-4
         policy_lr = 3e-4
         alpha_lr = 3e-4
-
+        # 定义了四个优化器，分别用于优化两个Q网络、策略网络和熵温度参数alpha
         self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=soft_q_lr)
         self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=soft_q_lr)
         self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
         self.alpha_optimizer = optim.Adam([self.log_alpha], lr=alpha_lr)
 
     def train(self, batch_size, reward_scale=10., auto_entropy=True, target_entropy=-2, gamma=0.99, soft_tau=1e-2):
-        state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)
+        state, action, reward, next_state, done = self.replay_buffer.sample(batch_size)  # 从重放缓冲区采样数据
         # print('sample:', state, action,  reward, done)
 
         state = torch.FloatTensor(state).to(device)
         next_state = torch.FloatTensor(next_state).to(device)
         action = torch.FloatTensor(action).to(device)
-        reward = torch.FloatTensor(reward).unsqueeze(1).to(device)  # reward is single value, unsqueeze() to add one dim to be [reward] at the sample dim;
+        reward = torch.FloatTensor(reward).unsqueeze(1).to(
+            device)  # reward is single value, unsqueeze() to add one dim to be [reward] at the sample dim;
         done = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
 
         predicted_q_value1 = self.soft_q_net1(state, action)
@@ -61,7 +63,7 @@ class SAC():
             dim=0) + 1e-6)  # normalize with batch mean and std; plus a small number to prevent numerical problem
         # Updating alpha wrt entropy
         # alpha = 0.0  # trade-off between exploration (max entropy) and exploitation (max Q)
-        if auto_entropy is True:
+        if auto_entropy is True:  # 自动调整熵权重（alpha）
             alpha_loss = -(self.log_alpha * (log_prob + target_entropy).detach()).mean()
             # print('alpha loss: ',alpha_loss)
             self.alpha_optimizer.zero_grad()
@@ -76,12 +78,13 @@ class SAC():
         target_q_min = torch.min(self.target_soft_q_net1(next_state, new_next_action),
                                  self.target_soft_q_net2(next_state, new_next_action)) - self.alpha * next_log_prob
         target_q_value = reward + (1 - done) * gamma * target_q_min  # if done==1, only reward
-        q_value_loss1 = self.soft_q_criterion1(predicted_q_value1, target_q_value.detach())  # detach: no gradients for the variable
+        q_value_loss1 = self.soft_q_criterion1(predicted_q_value1,
+                                               target_q_value.detach())  # detach: no gradients for the variable
         q_value_loss2 = self.soft_q_criterion2(predicted_q_value2, target_q_value.detach())
 
         self.soft_q_optimizer1.zero_grad()
-        q_value_loss1.backward()
-        self.soft_q_optimizer1.step()
+        q_value_loss1.backward()  # 反向传播，它根据损失函数计算每个参数的梯度
+        self.soft_q_optimizer1.step()  # 使用计算出的梯度更新第一个Q网络的参数。这一步实际上应用了优化器中定义的优化算法（这里是Adam）来调整参数，以最小化损失函数
         self.soft_q_optimizer2.zero_grad()
         q_value_loss2.backward()
         self.soft_q_optimizer2.step()
@@ -115,16 +118,15 @@ class SAC():
         return alpha_loss, q_value_loss1, q_value_loss2, policy_loss
 
     def save_model(self, path):
-        torch.save(self.soft_q_net1.state_dict(), path + 'q1.pth')
+        torch.save(self.soft_q_net1.state_dict(), path + 'q1.pth')  # state_dict() 方法获取模型的参数
         torch.save(self.soft_q_net2.state_dict(), path + 'q2.pth')
         torch.save(self.policy_net.state_dict(), path + 'policy.pth')
         # torch.save(self.target_soft_q_net1.state_dict(), path + 'q1_target.pth')
         # torch.save(self.target_soft_q_net2.state_dict(), path + 'q2_target.pth')
         # print('=============The SAC model is saved=============')
 
-
     def load_model(self, path):
-        self.soft_q_net1.load_state_dict(torch.load(path + 'q1.pth'))
+        self.soft_q_net1.load_state_dict(torch.load(path + 'q1.pth'))  # load_state_dict 方法将这些参数加载到相应的模型中
         self.soft_q_net2.load_state_dict(torch.load(path + 'q2.pth'))
         self.policy_net.load_state_dict(torch.load(path + 'policy.pth'))
         self.target_soft_q_net1 = deepcopy(self.soft_q_net1)
@@ -136,19 +138,3 @@ class SAC():
         # self.soft_q_net1.eval()
         # self.soft_q_net2.eval()
         # self.policy_net.eval()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
