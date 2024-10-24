@@ -1,0 +1,14 @@
+'''=================================================
+@Project -> File   ：Python-Matlab
+@IDE    ：PyCharm
+@Author ：zhr
+@Date   ：2024/10/24 21:57
+@ Des   ：bug in train_masac_DHD.py
+=================================================='''
+训练时会出现错误：
+RuntimeError: Expected all tensors to be on the same device,
+but found at least two devices, cpu and cuda:0! (when checking argument for argument mat1 in method wrapper_addmm)
+这样的错误通常是因为在PyTorch中进行计算时，参与计算的张量不在同一个设备上。
+在PyTorch中，所有的张量操作都应该在相同的设备上进行，无论是CPU还是GPU。如果张量分布在不同的设备上，就会导致这个错误。
+原因在于masac.py文件，将数据全部放在cpu即可，例如：
+将alpha_loss_list.append(alpha_loss)写为alpha_loss_list.append(alpha_loss.cpu().detach())
